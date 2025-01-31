@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>BAD GUID Explorer</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0; 
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(135deg, #1e1e2f, #29294f);
+      color: #fff;
+      padding: 2px;
+    }
+
+    header {
+      padding: 1rem;
+      text-align: center;
+      color: #fff;
+      margin-bottom: 1px;
+    }
+    header img {
+      margin-bottom: 1rem;  
+    }
+
+    h1 {
+      margin-bottom: 15px;
+    }
+
+    /* Container for top-right logos */
+    .icon-container {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      background-color: white; 
+      border-radius: 50%; 
+      padding: 4px; 
+      cursor: pointer;
+    }
+
+    .controls {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 20px;
+      margin-top: 5px;
+    }
+
+    select, button {
+      padding: 6px 12px;
+      background-color: #444;
+      border: 1px solid #666;
+      color: #fff;
+      cursor: pointer;
+    }
+    select:hover,
+    button:hover {
+      background-color: #555;
+    }
+
+    /* Main container for GUIDs */
+    #guidList {
+      display: flex;
+      flex-direction: row;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+    }
+
+    /* GUID card */
+    .guid-card {
+      background-color: #2f2f5f;
+      padding: 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      width: 200px;
+      text-align: center;
+      word-wrap: break-word;
+      transition: background 0.3s ease;
+    }
+    .guid-card:hover {
+      background-color: #4f4f7f;
+    }
+
+    /* Headings for Category and Tool */
+    .group-heading {
+      width: 100%;
+      text-align: center;
+      margin: 15px 0 5px 0;
+      font-size: 1.1rem;
+      font-weight: bold;
+    }
+    .sub-heading {
+      width: 100%;
+      text-align: center;
+      margin: 10px 0 5px 0;
+      font-size: 1rem;
+      font-weight: normal;
+      font-style: italic;
+    }
+
+    /* Each group row */
+    .horizontal-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      margin-bottom: 20px;
+      width: 100%;
+    }
+
+    /* Centered modal overlay for detail */
+    #detail-modal {
+      display: none; 
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      background: rgba(0, 0, 0, 0.4);
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+    }
+    #detail-box {
+      background-color: #222;
+      border: 1px solid #333;
+      border-radius: 6px;
+      width: 600px; /* Wider so GUID fits on one line */
+      max-height: 80%;
+      overflow-y: auto;
+      padding: 15px;
+    }
+    .close-btn {
+      float: right;
+      background-color: #444;
+      border: none;
+      color: white;
+      cursor: pointer;
+      padding: 4px 8px;
+      margin-bottom: 10px;
+    }
+    .close-btn:hover {
+      background-color: #666;
+    }
+    .guid-big {
+      font-size: 1.25rem;
+      margin-bottom: 10px;
+      text-align: center;
+      font-weight: bold;
+      word-wrap: break-word;
+    }
+    .detail-row {
+      margin: 5px 0;
+    }
+    .label {
+      font-weight: bold;
+    }
+    /* White link text for readability */
+    #detailContent a {
+      color: #fff;
+      text-decoration: underline;
+    }
+  </style>
+</head>
+
+<body>
+<header>
+  <img src="badguids.png" alt="BADGUID Logo" width="128" height="128">
+  <h1>BAD GUIDs EXPLORER</h1>
+</header>
+
+<!-- Top-right logo container -->
+<div class="icon-container">
+  <a href="https://github.com/mthcht/ThreatHunting-Keywords-yara-rules" target="_blank">
+    <img src="yara_logo.png" alt="YARA Logo" class="logo-icon">
+  </a>
+  <a href="https://github.com/mthcht/ThreatHunting-Keywords" target="_blank">
+    <img src="https://upload.wikimedia.org/wikipedia/commons/9/91/Octicons-mark-github.svg"
+         alt="GitHub" class="logo-icon">
+  </a>
+</div>
+
+<div class="controls">
+  <!-- Main view selection -->
+  <select id="viewMode">
+    <option value="all">Show All</option>
+    <option value="tool">Group by Tool</option>
+    <option value="category">Group by Category</option>
+  </select>
+
+  <!-- Category filter (only visible if "category" mode is selected) -->
+  <select id="categorySelect" style="display:none"></select>
+
+  <!-- Tool filter (only visible if "category" mode is selected) -->
+  <select id="toolSelect" style="display:none"></select>
+
+  <button id="switchView">Apply</button>
+</div>
+
+<div id="guidList"></div>
+
+<!-- Centered modal for detail -->
+<div id="detail-modal">
+  <div id="detail-box">
+    <button class="close-btn" onclick="hideDetail()">Close</button>
+    <div id="detailContent"></div>
+  </div>
+</div>
+
+<script>
+  let csvData = [];
+
+  // Fields to display in detail (removing "metadata_" in the label)
+  const fieldsToShow = [
+    'metadata_tool',
+    'metadata_description',
+    'metadata_tool_techniques',
+    'metadata_tool_tactics',
+    'metadata_category',
+    'metadata_link',
+    'metadata_github_stars',
+    'metadata_github_forks',
+    'metadata_github_updated_at',
+    'metadata_github_created_at'
+  ];
+
+  /* ========== FETCH & PARSE CSV ========== */
+
+  fetch('https://raw.githubusercontent.com/mthcht/ThreatHunting-Keywords/refs/heads/main/GUIDproject_tag_detection.csv')
+    .then(response => response.text())
+    .then(csv => {
+      csvData = parseCSV(csv);
+      populateCategorySelect();
+      populateToolSelect();
+      displayByAll();
+    })
+    .catch(err => console.error(err));
+
+  function parseCSV(csv) {
+    const lines = csv.trim().split('\n');
+    const headers = lines[0].replace(/"/g, '').split(',');
+    const data = [];
+    for (let i = 1; i < lines.length; i++) {
+      const row = lines[i];
+      const values = row.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g)
+                       .map(val => val.replace(/^"|"$/g, ''));
+      const obj = {};
+      headers.forEach((h, idx) => {
+        obj[h] = values[idx] || '';
+      });
+      data.push(obj);
+    }
+    return data;
+  }
+
+  /* ========== POPULATE FILTERS ========== */
+
+  function populateCategorySelect() {
+    const select = document.getElementById('categorySelect');
+    select.innerHTML = '';
+    const categories = new Set();
+
+    csvData.forEach(item => {
+      if (item.metadata_category) {
+        categories.add(item.metadata_category);
+      }
+    });
+
+    // "All Categories" option
+    const allOpt = document.createElement('option');
+    allOpt.value = 'ALL_CATS';
+    allOpt.textContent = 'All Categories';
+    select.appendChild(allOpt);
+
+    // Then each distinct category
+    Array.from(categories).sort().forEach(cat => {
+      const opt = document.createElement('option');
+      opt.value = cat;
+      opt.textContent = cat;
+      select.appendChild(opt);
+    });
+  }
+
+  // Refresh tool list based on the selected category
+  function populateToolSelect() {
+    const categoryVal = document.getElementById('categorySelect').value || 'ALL_CATS';
+    const toolSelect = document.getElementById('toolSelect');
+    toolSelect.innerHTML = '';
+
+    // Filter if category != ALL_CATS
+    let categoryData = csvData;
+    if (categoryVal && categoryVal !== 'ALL_CATS') {
+      categoryData = csvData.filter(item => item.metadata_category === categoryVal);
+    }
+
+    // Gather tools
+    const tools = new Set();
+    categoryData.forEach(item => {
+      if (item.metadata_tool) {
+        tools.add(item.metadata_tool);
+      }
+    });
+
+    // "All Tools" option
+    const allOpt = document.createElement('option');
+    allOpt.value = 'ALL_TOOLS';
+    allOpt.textContent = 'All Tools';
+    toolSelect.appendChild(allOpt);
+
+    // Distinct tools
+    Array.from(tools).sort().forEach(tool => {
+      const opt = document.createElement('option');
+      opt.value = tool;
+      opt.textContent = tool;
+      toolSelect.appendChild(opt);
+    });
+  }
+
+  /* ========== DISPLAY MODES ========== */
+
+  function displayByAll() {
+    const container = document.getElementById('guidList');
+    container.innerHTML = '';
+    container.style.flexDirection = 'row';
+    container.style.flexWrap = 'wrap';
+
+    csvData.forEach(item => {
+      const card = createGuidCard(item);
+      container.appendChild(card);
+    });
+  }
+
+  function displayByTool() {
+    const grouped = {};
+    csvData.forEach(item => {
+      const tool = item.metadata_tool || 'No Tool';
+      if (!grouped[tool]) grouped[tool] = [];
+      grouped[tool].push(item);
+    });
+    displayGroupedTool(grouped, '');
+  }
+
+  // Group by Category, further grouping by tool
+  function displayByCategoryAndTool() {
+    const container = document.getElementById('guidList');
+    container.innerHTML = '';
+    container.style.flexDirection = 'column';
+    container.style.flexWrap = 'nowrap';
+
+    const categoryVal = document.getElementById('categorySelect').value;
+    const toolVal = document.getElementById('toolSelect').value;
+
+    // Filter by category
+    let dataSet = csvData;
+    if (categoryVal !== 'ALL_CATS') {
+      dataSet = dataSet.filter(item => item.metadata_category === categoryVal);
+    }
+    // Then filter by tool
+    if (toolVal !== 'ALL_TOOLS') {
+      dataSet = dataSet.filter(item => item.metadata_tool === toolVal);
+    }
+
+    // Group by category -> tool
+    const categoryGroups = {};
+    dataSet.forEach(item => {
+      const cat = item.metadata_category || 'No Category';
+      if (!categoryGroups[cat]) categoryGroups[cat] = {};
+      const tool = item.metadata_tool || 'No Tool';
+      if (!categoryGroups[cat][tool]) categoryGroups[cat][tool] = [];
+      categoryGroups[cat][tool].push(item);
+    });
+
+    // Display
+    for (let cat in categoryGroups) {
+      const line = document.createElement('hr');
+      line.style.width = "100%";  // Full width
+      line.style.border = "1px solid #ffffff";  // White line
+      line.style.margin = "20px 0";  // Space above and below
+    // Category heading
+      const catHeading = document.createElement('div');
+      catHeading.className = 'group-heading';
+      catHeading.textContent = `${cat}`;
+      container.appendChild(line);
+      container.appendChild(catHeading);
+
+      const toolsInCat = categoryGroups[cat];
+      for (let tool in toolsInCat) {
+        // Tool sub-heading
+        const toolHeading = document.createElement('div');
+        toolHeading.className = 'sub-heading';
+        toolHeading.textContent = `${tool}`;
+        container.appendChild(toolHeading);
+
+        // Horizontal row of GUIDs
+        const rowDiv = document.createElement('div');
+        rowDiv.className = 'horizontal-list';
+        toolsInCat[tool].forEach(item => {
+          const card = createGuidCard(item);
+          rowDiv.appendChild(card);
+        });
+        container.appendChild(rowDiv);
+      }
+    }
+  }
+
+  function displayGroupedTool(groupedData, label) {
+    const container = document.getElementById('guidList');
+    container.innerHTML = '';
+    container.style.flexDirection = 'column';
+    container.style.flexWrap = 'nowrap';
+
+    for (let tool in groupedData) {
+      const heading = document.createElement('div');
+      heading.className = 'group-heading';
+      heading.textContent = `${label} ${tool}`;
+      container.appendChild(heading);
+
+      const rowDiv = document.createElement('div');
+      rowDiv.className = 'horizontal-list';
+      groupedData[tool].forEach(item => {
+        const card = createGuidCard(item);
+        rowDiv.appendChild(card);
+      });
+      container.appendChild(rowDiv);
+    }
+  }
+
+  /* ========== CARD & DETAIL MODAL ========== */
+
+  function createGuidCard(item) {
+    const displayGUID = (item.keyword || '').replace(/\*/g, '');
+    const card = document.createElement('div');
+    card.className = 'guid-card';
+    card.textContent = displayGUID;
+    card.onclick = () => showDetail(item, displayGUID);
+    return card;
+  }
+
+  // Show detail in centered modal
+  function showDetail(item, displayGUID) {
+    const modal = document.getElementById('detail-modal');
+    const content = document.getElementById('detailContent');
+    modal.style.display = 'flex'; 
+    content.innerHTML = '';
+
+    // Big GUID at top
+    const guidBig = document.createElement('div');
+    guidBig.className = 'guid-big';
+    guidBig.textContent = `GUID: ${displayGUID}`;
+    content.appendChild(guidBig);
+
+    // Show only fieldsToShow
+    fieldsToShow.forEach(field => {
+      if (item[field]) {
+        const row = document.createElement('div');
+        row.className = 'detail-row';
+        const cleanLabel = field.replace('metadata_', '');
+        if (field === 'metadata_link') {
+          row.innerHTML = `<span class="label">${cleanLabel}:</span>
+            <a href="${item[field]}" target="_blank">${item[field]}</a>`;
+        } else {
+          row.innerHTML = `<span class="label">${cleanLabel}:</span> ${item[field]}`;
+        }
+        content.appendChild(row);
+      }
+    });
+  }
+
+  // Hide detail modal
+  function hideDetail() {
+    document.getElementById('detail-modal').style.display = 'none';
+  }
+
+  // If user clicks outside the box, also close
+  document.getElementById('detail-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'detail-modal') {
+      hideDetail();
+    }
+  });
+
+  /* ========== EVENT HANDLERS ========== */
+
+  // Switch among "all", "tool", "category"
+  document.getElementById('switchView').addEventListener('click', () => {
+    hideDetail();
+
+    const mode = document.getElementById('viewMode').value;
+    const catSelect = document.getElementById('categorySelect');
+    const toolSelect = document.getElementById('toolSelect');
+
+    if (mode === 'all') {
+      catSelect.style.display = 'none';
+      toolSelect.style.display = 'none';
+      displayByAll();
+    } else if (mode === 'tool') {
+      catSelect.style.display = 'none';
+      toolSelect.style.display = 'none';
+      displayByTool();
+    } else if (mode === 'category') {
+      catSelect.style.display = 'inline-block';
+      toolSelect.style.display = 'inline-block';
+      displayByCategoryAndTool();
+    }
+  });
+
+  // If category changes, re-populate tools, then redisplay
+  document.getElementById('categorySelect').addEventListener('change', () => {
+    populateToolSelect();
+    hideDetail();
+    if (document.getElementById('viewMode').value === 'category') {
+      displayByCategoryAndTool();
+    }
+  });
+
+  // If tool changes, just redisplay
+  document.getElementById('toolSelect').addEventListener('change', () => {
+    hideDetail();
+    if (document.getElementById('viewMode').value === 'category') {
+      displayByCategoryAndTool();
+    }
+  });
+</script>
+</body>
+</html>
